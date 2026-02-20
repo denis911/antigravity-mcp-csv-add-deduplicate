@@ -37,8 +37,12 @@ Managing large CSV files directly within an LLM (like Claude or ChatGPT) is inef
    ```
 
 ### Claude Desktop Integration
+
 Add the following to your Claude Desktop configuration file:
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+> [!IMPORTANT]
+> On Windows, we recommend using the `python -m` syntax below to bypass system security policies (like App Control Policy 4551) that might block the default `uv` executable shims.
 
 ```json
 {
@@ -49,7 +53,9 @@ Add the following to your Claude Desktop configuration file:
         "--directory",
         "C:\\path\\to\\your\\repo\\antigravity-mcp-csv-add-deduplicate",
         "run",
-        "linkedin-prospecting-csv"
+        "python",
+        "-m",
+        "linkedin_prospecting_csv.server"
       ]
     }
   }
@@ -61,7 +67,7 @@ Add the following to your Claude Desktop configuration file:
 ### Automated Testing
 We use `pytest` with real-world data from the `TESTS` directory:
 ```bash
-$env:PYTHONPATH="src"; uv run --with pandas --with mcp --with pytest --with pytest-asyncio python -m pytest TESTS/test_csv_ops.py
+uv run pytest TESTS/test_csv_ops.py
 ```
 
 ### Manual Verification
