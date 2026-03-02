@@ -1,0 +1,17 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.11, pytest-9.0.2, pluggy-1.6.0 -- C:\tmp\antigravity-mcp-csv-add-deduplicate\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\tmp\antigravity-mcp-csv-add-deduplicate
+configfile: pyproject.toml
+plugins: anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 6 items
+
+TESTS/test_csv_ops.py::test_create_new_csv PASSED                        [ 16%]
+TESTS/test_csv_ops.py::test_auto_normalization_on_load PASSED            [ 33%]
+TESTS/test_csv_ops.py::test_append_with_preview_and_normalization PASSED [ 50%]
+TESTS/test_csv_ops.py::test_filter_profiles_multi_value PASSED           [ 66%]
+TESTS/test_csv_ops.py::test_search_profiles_case_insensitive PASSED      [ 83%]
+TESTS/test_csv_ops.py::test_export_segment_golden_schema PASSED          [100%]
+
+============================== 6 passed in 1.18s ==============================

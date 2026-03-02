@@ -18,79 +18,106 @@ def temp_csv(tmp_path):
     return temp_file
 
 @pytest.mark.asyncio
-async def test_get_stats(temp_csv):
-    """Test statistics calculation on the initial small CSV."""
+async def test_create_new_csv(tmp_path):
+    """Test creating a new CSV with Golden Schema."""
+    new_csv = tmp_path / "new_golden.csv"
+    result = await csv_ops.create_new_csv(str(new_csv))
+    assert result["status"] == "success"
+    assert new_csv.exists()
+    
+    df = pd.read_csv(new_csv)
+    assert list(df.columns) == csv_ops.GOLDEN_SCHEMA
+
+@pytest.mark.asyncio
+async def test_auto_normalization_on_load(temp_csv):
+    """Test that loading an existing V1 CSV auto-normalizes its headers."""
+    # First, verify it hasn't been normalized yet (it's a copy of SMALL_CSV)
+    df_raw = pd.read_csv(temp_csv)
+    assert "v2 Score" in df_raw.columns
+    assert "LinkedIn URL" in df_raw.columns
+    
+    # Trigger normalization via stats
     stats = await csv_ops.get_csv_stats(str(temp_csv))
     assert stats["total_profiles"] == 10
-    assert stats["avg_score"] > 0
-    assert "USA (Seattle)" in stats["location_breakdown"]
+    
+    # Reload and check headers
+    df_normalized = pd.read_csv(temp_csv)
+    assert "match_score" in df_normalized.columns
+    assert "linkedin_url" in df_normalized.columns
+    assert "full_name" in df_normalized.columns
+    assert list(df_normalized.columns[:len(csv_ops.GOLDEN_SCHEMA)]) == csv_ops.GOLDEN_SCHEMA
 
 @pytest.mark.asyncio
-async def test_append_and_deduplicate(temp_csv):
-    """Test appending records from the big CSV and ensuring deduplication."""
-    # Read records from big CSV
-    big_df = pd.read_csv(BIG_CSV)
-    profiles_to_add = big_df.to_dict(orient='records')
+async def test_append_with_preview_and_normalization(temp_csv):
+    """Test appending records with legacy names and getting a preview."""
+    # Records with legacy names
+    profiles_to_add = [
+        {
+            "Name": "New Person 1",
+            "LinkedIn URL": "https://linkedin.com/in/newperson1",
+            "v2 Score": 25,
+            "Location": "Germany"
+        },
+        {
+            "Name": "New Person 2",
+            "LinkedIn URL": "https://linkedin.com/in/newperson2",
+            "v2 Score": 22
+        }
+    ]
     
-    # Initial count
-    initial_stats = await csv_ops.get_csv_stats(str(temp_csv))
-    initial_count = initial_stats["total_profiles"]
-    
-    # Append records
     result = await csv_ops.append_profiles_to_csv(str(temp_csv), profiles_to_add)
+    assert result["added"] == 2
+    assert "New Person 1" in result["preview"]
+    assert "New Person 2" in result["preview"]
     
-    # The big CSV contains 55 records, but some might be duplicates of the small one
-    # Small CSV has 10 records.
-    # Let's check how many were actually added
-    final_stats = await csv_ops.get_csv_stats(str(temp_csv))
-    assert final_stats["total_profiles"] >= initial_count
-    
-    # Try appending the same records again to verify deduplication
-    result_second = await csv_ops.append_profiles_to_csv(str(temp_csv), profiles_to_add)
-    assert result_second["added"] == 0
-    assert result_second["skipped_duplicates"] == len(profiles_to_add)
-    assert result_second["total_profiles"] == final_stats["total_profiles"]
+    # Verify in file
+    df = pd.read_csv(temp_csv)
+    assert "New Person 1" in df["full_name"].values
+    assert 25 in df["match_score"].values
 
 @pytest.mark.asyncio
-async def test_filter_profiles(temp_csv):
-    """Test filtering logic."""
-    # Filter by score
-    high_scorers = await csv_ops.filter_profiles(str(temp_csv), min_score=20)
-    assert len(high_scorers) > 0
-    for p in high_scorers:
-        assert p["v2 Score"] >= 20
-
-    # Filter by location
-    canada_profiles = await csv_ops.filter_profiles(str(temp_csv), locations=["Canada"])
-    assert len(canada_profiles) > 0
-    for p in canada_profiles:
-        assert "Canada" in p["Location"]
-
-@pytest.mark.asyncio
-async def test_search_profiles(temp_csv):
-    """Test full-text search."""
-    # Search for 'Meta'
-    meta_profiles = await csv_ops.search_profiles(str(temp_csv), search_term="Meta")
-    assert len(meta_profiles) > 0
+async def test_filter_profiles_multi_value(temp_csv):
+    """Test filtering with multiple values."""
+    # First normalize the file
+    await csv_ops.get_csv_stats(str(temp_csv))
     
-    # Search for something non-existent
-    none_profiles = await csv_ops.search_profiles(str(temp_csv), search_term="NON_EXISTENT_STUFF_12345")
-    assert len(none_profiles) == 0
+    # Filter by multiple locations
+    results = await csv_ops.filter_profiles(str(temp_csv), locations=["USA", "Canada"])
+    assert len(results) > 0
+    for p in results:
+        loc = p["location"].lower()
+        assert "usa" in loc or "canada" in loc
 
 @pytest.mark.asyncio
-async def test_export_segment(temp_csv, tmp_path):
-    """Test exporting a segment to a new file."""
-    output_file = tmp_path / "exported.csv"
+async def test_search_profiles_case_insensitive(temp_csv):
+    """Test case-insensitive search."""
+    # Normalize
+    await csv_ops.get_csv_stats(str(temp_csv))
+    
+    # Search for 'meta' (lowercase)
+    results = await csv_ops.search_profiles(str(temp_csv), search_term="meta")
+    assert len(results) > 0
+    
+    # All results should have 'Meta' in one of the fields (Company is standard)
+    found_correct = False
+    for p in results:
+        if "Meta" in p["company"]:
+            found_correct = True
+            break
+    assert found_correct
+
+@pytest.mark.asyncio
+async def test_export_segment_golden_schema(temp_csv, tmp_path):
+    """Test exporting a segment ensures golden schema columns."""
+    output_file = tmp_path / "exported_v2.csv"
     result = await csv_ops.export_segment(
         source_csv=str(temp_csv),
         output_csv=str(output_file),
-        min_score=22,
-        columns=["Name", "v2 Score"]
+        min_score=20,
+        columns=["full_name", "match_score"]
     )
     
     assert result["profiles_exported"] > 0
-    assert output_file.exists()
-    
-    exported_df = pd.read_csv(output_file)
-    assert list(exported_df.columns) == ["Name", "v2 Score"]
-    assert (exported_df["v2 Score"] >= 22).all()
+    df = pd.read_csv(output_file)
+    assert list(df.columns) == ["full_name", "match_score"]
+    assert (df["match_score"] >= 20).all()

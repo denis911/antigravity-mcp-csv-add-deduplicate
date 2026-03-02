@@ -17,20 +17,32 @@ server = Server("linkedin-prospecting-csv")
 async def list_tools() -> List[Tool]:
     return [
         Tool(
-            name="append_profiles_to_csv",
-            description="Append new LinkedIn profiles to CSV with automatic deduplication",
+            name="create_new_csv",
+            description="Initialize a fresh, empty CSV file with the Golden Schema headers",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "csv_path": {"type": "string", "description": "Path to the CSV file"},
+                    "csv_path": {"type": "string", "description": "Full path where the CSV should be created"},
+                    "overwrite": {"type": "boolean", "default": False, "description": "If True, will overwrite existing file"}
+                },
+                "required": ["csv_path"]
+            }
+        ),
+        Tool(
+            name="append_profiles_to_csv",
+            description="Append new LinkedIn profiles to CSV with auto-normalization and deduplication",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "csv_path": {"type": "string", "description": "Absolute path to the CSV file"},
                     "profiles": {
                         "type": "array",
                         "items": {"type": "object"},
-                        "description": "List of profile dictionaries to append"
+                        "description": "List of profile dictionaries to append (supports legacy field names)"
                     },
                     "dedupe_column": {
                         "type": "string",
-                        "default": "LinkedIn URL",
+                        "default": "linkedin_url",
                         "description": "Column name to use for deduplication"
                     }
                 },
@@ -39,15 +51,15 @@ async def list_tools() -> List[Tool]:
         ),
         Tool(
             name="filter_profiles",
-            description="Query and filter profiles by multiple criteria",
+            description="Query and filter profiles by multiple criteria using standardized names",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "csv_path": {"type": "string"},
+                    "csv_path": {"type": "string", "description": "Absolute path to the CSV file"},
                     "min_score": {"type": "integer"},
                     "max_score": {"type": "integer"},
-                    "locations": {"type": "array", "items": {"type": "string"}},
-                    "companies": {"type": "array", "items": {"type": "string"}},
+                    "locations": {"type": "array", "items": {"type": "string"}, "description": "Multi-value location filter"},
+                    "companies": {"type": "array", "items": {"type": "string"}, "description": "Multi-value company filter"},
                     "current_role_only": {"type": "boolean"},
                     "found_after_date": {"type": "string", "description": "ISO date string (e.g., '2026-02-16')"},
                     "limit": {"type": "integer"}
@@ -57,38 +69,38 @@ async def list_tools() -> List[Tool]:
         ),
         Tool(
             name="get_csv_stats",
-            description="Get summary statistics about the CSV",
+            description="Get summary statistics about the CSV with Golden Schema support",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "csv_path": {"type": "string"}
+                    "csv_path": {"type": "string", "description": "Absolute path to the CSV file"}
                 },
                 "required": ["csv_path"]
             }
         ),
         Tool(
             name="export_segment",
-            description="Export a filtered subset to a new CSV file",
+            description="Export a filtered subset to a new CSV file following Golden Schema",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "source_csv": {"type": "string"},
-                    "output_csv": {"type": "string"},
+                    "source_csv": {"type": "string", "description": "Absolute path to source CSV"},
+                    "output_csv": {"type": "string", "description": "Absolute path to output CSV"},
                     "min_score": {"type": "integer"},
                     "locations": {"type": "array", "items": {"type": "string"}},
                     "companies": {"type": "array", "items": {"type": "string"}},
-                    "columns": {"type": "array", "items": {"type": "string"}}
+                    "columns": {"type": "array", "items": {"type": "string"}, "description": "Columns to include (auto-normalized)"}
                 },
                 "required": ["source_csv", "output_csv"]
             }
         ),
         Tool(
             name="search_profiles",
-            description="Full-text search across text fields like Headline, Company, Match Reason",
+            description="Case-insensitive full-text search across all standardized text fields",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "csv_path": {"type": "string"},
+                    "csv_path": {"type": "string", "description": "Absolute path to the CSV file"},
                     "search_term": {"type": "string"},
                     "columns": {"type": "array", "items": {"type": "string"}},
                     "case_sensitive": {"type": "boolean", "default": False},
@@ -99,12 +111,12 @@ async def list_tools() -> List[Tool]:
         ),
         Tool(
             name="deduplicate_csv",
-            description="Remove all duplicates from CSV (maintenance operation)",
+            description="Remove duplicates from CSV using standardized column names",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "csv_path": {"type": "string"},
-                    "dedupe_column": {"type": "string", "default": "LinkedIn URL"},
+                    "csv_path": {"type": "string", "description": "Absolute path to the CSV file"},
+                    "dedupe_column": {"type": "string", "default": "linkedin_url"},
                     "keep": {"type": "string", "enum": ["first", "last"], "default": "first"}
                 },
                 "required": ["csv_path"]
@@ -115,7 +127,9 @@ async def list_tools() -> List[Tool]:
 @server.call_tool()
 async def call_tool(name: str, arguments: Any) -> List[TextContent]:
     try:
-        if name == "append_profiles_to_csv":
+        if name == "create_new_csv":
+            result = await csv_ops.create_new_csv(**arguments)
+        elif name == "append_profiles_to_csv":
             result = await csv_ops.append_profiles_to_csv(**arguments)
         elif name == "filter_profiles":
             result = await csv_ops.filter_profiles(**arguments)
